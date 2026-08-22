@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frequency Response Test</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+h1 { font-size: 1.5rem; margin-bottom: 10px; }
+h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
+.screen { display: none; width: 100%; max-width: 900px; text-align: center; }
+.screen.active { display: block; }
+.btn {
+  display: inline-block;
+  padding: 14px 28px;
+  font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin: 8px;
+  transition: transform 0.1s, background 0.15s;
+}
+.btn:active { transform: scale(0.95); }
+.btn-primary { background: #4361ee; color: #fff; }
+.btn-primary:hover { background: #3a56d4; }
+.btn-danger { background: #e63946; color: #fff; }
+.btn-danger:hover { background: #c5303c; }
+.btn-secondary { background: #444; color: #eee; }
+.btn-secondary:hover { background: #555; }
+.btn-loud {
+  background: #e63946;
+  color: #fff;
+  font-size: 2rem;
+  padding: 30px 60px;
+  border-radius: 16px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.btn-loud:hover { background: #ff4d5a; }
+.btn-choice {
+  font-size: 1.5rem;
+  padding: 20px 40px;
+  border-radius: 12px;
+  min-width: 120px;
+}
+.mode-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin: 20px 0; }
+.mode-card {
+  background: #16213e;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 24px;
+  width: 300px;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.mode-card:hover { border-color: #4361ee; transform: translateY(-2px); }
+.mode-card.selected { border-color: #4361ee; background: #1a2a4e; }
+.mode-card h3 { margin-bottom: 8px; color: #4361ee; }
+.mode-card p { font-size: 0.9rem; color: #aaa; line-height: 1.4; }
+.progress { font-size: 1.1rem; color: #aaa; margin-bottom: 20px; }
+.progress .current-freq { font-size: 0.9rem; color: #666; margin-top: 4px; }
+.instructions { font-size: 0.9rem; color: #888; margin: 12px 0; line-height: 1.4; }
+.stop-link { color: #888; text-decoration: underline; cursor: pointer; margin-top: 20px; display: inline-block; }
+.stop-link:hover { color: #ccc; }
+
+/* Histogram */
+.histogram { margin: 20px auto; width: 100%; overflow-x: auto; }
+.histogram-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 250px;
+  gap: 2px;
+  padding: 0 10px;
+  min-width: fit-content;
+}
+.bar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 28px;
+  max-width: 40px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.bar {
+  width: 100%;
+  background: #4361ee;
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s;
+  min-height: 2px;
+}
+.bar.hot { background: #e63946; }
+.bar-label {
+  font-size: 0.6rem;
+  color: #888;
+  margin-top: 4px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  max-height: 60px;
+  overflow: hidden;
+}
+.bar-value {
+  font-size: 0.6rem;
+  color: #ccc;
+  margin-bottom: 2px;
+}
+.legend { font-size: 0.85rem; color: #888; margin-top: 12px; }
+.legend span.hot-swatch {
+  display: inline-block;
+  width: 12px; height: 12px;
+  background: #e63946;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.legend span.normal-swatch {
+  display: inline-block;
+  width: 12px; height: 12px;
+  background: #4361ee;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.results-actions { margin-top: 24px; }
+.warmup-notice {
+  font-size: 1rem;
+  color: #f0a500;
+  margin-bottom: 10px;
+}
+.paired-prompt {
+  font-size: 1.1rem;
+  color: #ccc;
+  margin-bottom: 16px;
+}
+</style>
+</head>
+<body>
+
+<!-- Start Screen -->
+<div id="screen-start" class="screen active">
+  <h1>Hearing Aid Frequency Response Test</h1>
+  <p class="instructions">
+    Identify frequencies receiving too much gain by testing your perception across 24 bands (100–8000 Hz).
+    <br>Adjust your speaker volume externally between runs to test different levels.
+  </p>
+  <div class="mode-cards">
+    <div class="mode-card selected" data-mode="random" onclick="selectMode('random')">
+      <h3>Random Tones</h3>
+      <p>Hear tones at random frequencies. Click "LOUD" whenever one sounds unexpectedly loud. Fast and intuitive.</p>
+    </div>
+    <div class="mode-card" data-mode="paired" onclick="selectMode('paired')">
+      <h3>Paired Comparison</h3>
+      <p>Hear two tones in sequence. Pick which sounds louder. More precise, takes longer.</p>
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="startRun()">Start</button>
+</div>
+
+<!-- Random Mode Run Screen -->
+<div id="screen-random" class="screen">
+  <div class="warmup-notice" id="random-warmup">⚡ Warm-up (not recorded)</div>
+  <div class="progress" id="random-progress">Tone 0 / 120</div>
+  <div style="margin: 30px 0;">
+    <button class="btn btn-loud" id="btn-loud" onmousedown="markLoud()" ontouchstart="markLoud()">LOUD</button>
+  </div>
+  <p class="instructions">Press the button or <strong>spacebar</strong> when a tone seems unexpectedly loud.</p>
+  <span class="stop-link" onclick="stopEarly()">Stop early &amp; see results</span>
+</div>
+
+<!-- Paired Mode Run Screen -->
+<div id="screen-paired" class="screen">
+  <div class="warmup-notice" id="paired-warmup">⚡ Warm-up (not recorded)</div>
+  <div class="progress" id="paired-progress">Pair 0 / 100</div>
+  <div class="paired-prompt" id="paired-prompt">Listen...</div>
+  <div id="paired-buttons" style="margin: 20px 0; visibility: hidden;">
+    <button class="btn btn-choice btn-primary" onclick="pairedChoice('A')">A louder<br><small>(1)</small></button>
+    <button class="btn btn-choice btn-secondary" onclick="pairedChoice('same')">Same<br><small>(2)</small></button>
+    <button class="btn btn-choice btn-primary" onclick="pairedChoice('B')">B louder<br><small>(3)</small></button>
+  </div>
+  <p class="instructions">Listen to both tones, then pick which sounded louder (or "Same").<br>Keyboard: <strong>1</strong> = A, <strong>2</strong> = Same, <strong>3</strong> = B</p>
+  <span class="stop-link" onclick="stopEarly()">Stop early &amp; see results</span>
+</div>
+
+<!-- Results Screen -->
+<div id="screen-results" class="screen">
+  <h2 id="results-title">Results</h2>
+  <div class="histogram" id="histogram"></div>
+  <div class="legend">
+    <span class="hot-swatch"></span> Hot (>1 SD above mean) &nbsp;&nbsp;
+    <span class="normal-swatch"></span> Normal
+  </div>
+  <div class="results-actions">
+    <button class="btn btn-primary" onclick="startRun()">Run Again</button>
+    <button class="btn btn-secondary" onclick="backToStart()">Change Mode</button>
+  </div>
+</div>
+
+<script>
+// --- Configuration ---
+const NUM_BANDS = 24;
+const FREQ_MIN = 100;
+const FREQ_MAX = 8000;
+const TONE_DURATION = 0.5;       // seconds
+const FADE_DURATION = 0.01;      // 10ms fade in/out
+const SILENCE_DURATION = 1.0;    // seconds between tones (random mode)
+const PRESENTATIONS_PER_BAND = 5;
+const NUM_PAIRS = 100;
+const WARMUP_COUNT = 10;
+
+// --- Derived ---
+const TOTAL_RANDOM = PRESENTATIONS_PER_BAND * NUM_BANDS;
+const TOTAL_PAIRED = NUM_PAIRS;
+
+// Generate 24 log-spaced center frequencies
+const bands = [];
+for (let i = 0; i < NUM_BANDS; i++) {
+  const freq = FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, i / (NUM_BANDS - 1));
+  bands.push(Math.round(freq));
+}
+
+// --- State ---
+let audioCtx = null;
+let selectedMode = 'random';
+let state = 'idle'; // idle, warmup, running, results, waiting (paired)
+let sequence = [];
+let currentIndex = 0;
+let warmupRemaining = 0;
+let results = {}; // band index -> { presentations, clicks } or { appearances, score }
+let currentToneBand = -1;
+let canRespond = false;
+let stopped = false;
+
+// Paired-specific
+let currentPair = null; // { a: bandIdx, b: bandIdx }
+let pairedWaiting = false;
+
+// --- Audio ---
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playTone(freq) {
+  return new Promise(resolve => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    // Fade in
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + FADE_DURATION);
+    // Sustain
+    gain.gain.setValueAtTime(0.3, now + TONE_DURATION - FADE_DURATION);
+    // Fade out
+    gain.gain.linearRampToValueAtTime(0, now + TONE_DURATION);
+
+    osc.start(now);
+    osc.stop(now + TONE_DURATION + 0.01);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+      resolve();
+    };
+  });
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// --- Sequence Generation ---
+function generateRandomSequence() {
+  // 5 presentations per band, shuffled
+  const deck = [];
+  for (let b = 0; b < NUM_BANDS; b++) {
+    for (let p = 0; p < PRESENTATIONS_PER_BAND; p++) {
+      deck.push(b);
+    }
+  }
+  shuffle(deck);
+
+  // Warmup: random bands
+  const warmup = [];
+  for (let i = 0; i < WARMUP_COUNT; i++) {
+    warmup.push(Math.floor(Math.random() * NUM_BANDS));
+  }
+
+  return { warmup, deck };
+}
+
+function generatePairedSequence() {
+  const deck = [];
+  for (let i = 0; i < NUM_PAIRS; i++) {
+    const a = Math.floor(Math.random() * NUM_BANDS);
+    let b = Math.floor(Math.random() * (NUM_BANDS - 1));
+    if (b >= a) b++;
+    deck.push({ a, b });
+  }
+
+  const warmup = [];
+  for (let i = 0; i < WARMUP_COUNT; i++) {
+    const a = Math.floor(Math.random() * NUM_BANDS);
+    let b = Math.floor(Math.random() * (NUM_BANDS - 1));
+    if (b >= a) b++;
+    warmup.push({ a, b });
+  }
+
+  return { warmup, deck };
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// --- UI Helpers ---
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function selectMode(mode) {
+  selectedMode = mode;
+  document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+  document.querySelector(`.mode-card[data-mode="${mode}"]`).classList.add('selected');
+}
+
+function backToStart() {
+  state = 'idle';
+  showScreen('screen-start');
+}
+
+function formatFreq(hz) {
+  if (hz >= 1000) return (hz / 1000).toFixed(1) + 'k';
+  return hz + '';
+}
+
+// --- Random Mode ---
+async function runRandom() {
+  showScreen('screen-random');
+  const { warmup, deck } = generateRandomSequence();
+
+  // Init results
+  results = {};
+  for (let b = 0; b < NUM_BANDS; b++) {
+    results[b] = { presentations: 0, clicks: 0 };
+  }
+
+  stopped = false;
+
+  // Warmup phase
+  state = 'warmup';
+  document.getElementById('random-warmup').style.display = 'block';
+  for (let i = 0; i < warmup.length && !stopped; i++) {
+    document.getElementById('random-progress').textContent = `Warm-up ${i + 1} / ${WARMUP_COUNT}`;
+    currentToneBand = warmup[i];
+    canRespond = true;
+    await playTone(bands[warmup[i]]);
+    canRespond = true; // keep response window open during silence
+    await wait(SILENCE_DURATION * 1000);
+    canRespond = false;
+  }
+
+  if (stopped) { showResults(); return; }
+
+  // Main run
+  state = 'running';
+  document.getElementById('random-warmup').style.display = 'none';
+  for (let i = 0; i < deck.length && !stopped; i++) {
+    const bandIdx = deck[i];
+    document.getElementById('random-progress').textContent = `Tone ${i + 1} / ${TOTAL_RANDOM}`;
+    currentToneBand = bandIdx;
+    canRespond = true;
+    results[bandIdx].presentations++;
+    await playTone(bands[bandIdx]);
+    canRespond = true; // keep open during silence
+    await wait(SILENCE_DURATION * 1000);
+    canRespond = false;
+  }
+
+  if (!stopped) showResults();
+}
+
+function markLoud() {
+  if (!canRespond || state === 'idle' || state === 'results') return;
+  if (state === 'warmup') return; // ignore warmup clicks for data
+  if (currentToneBand >= 0) {
+    results[currentToneBand].clicks++;
+    // Visual feedback
+    const btn = document.getElementById('btn-loud');
+    btn.style.background = '#ff4d5a';
+    setTimeout(() => { btn.style.background = ''; }, 150);
+  }
+}
+
+// --- Paired Mode ---
+async function runPaired() {
+  showScreen('screen-paired');
+  const { warmup, deck } = generatePairedSequence();
+
+  // Init results
+  results = {};
+  for (let b = 0; b < NUM_BANDS; b++) {
+    results[b] = { appearances: 0, score: 0 };
+  }
+
+  stopped = false;
+  const buttonsEl = document.getElementById('paired-buttons');
+  const promptEl = document.getElementById('paired-prompt');
+
+  // Warmup
+  state = 'warmup';
+  document.getElementById('paired-warmup').style.display = 'block';
+  for (let i = 0; i < warmup.length && !stopped; i++) {
+    document.getElementById('paired-progress').textContent = `Warm-up ${i + 1} / ${WARMUP_COUNT}`;
+    buttonsEl.style.visibility = 'hidden';
+    promptEl.textContent = 'Listen to Tone A...';
+    await playTone(bands[warmup[i].a]);
+    await wait(500);
+    promptEl.textContent = 'Listen to Tone B...';
+    await playTone(bands[warmup[i].b]);
+    promptEl.textContent = 'Which was louder?';
+    buttonsEl.style.visibility = 'visible';
+    pairedWaiting = true;
+    await waitForPairedResponse();
+    pairedWaiting = false;
+    await wait(500);
+  }
+
+  if (stopped) { showResults(); return; }
+
+  // Main run
+  state = 'running';
+  document.getElementById('paired-warmup').style.display = 'none';
+  for (let i = 0; i < deck.length && !stopped; i++) {
+    currentPair = deck[i];
+    document.getElementById('paired-progress').textContent = `Pair ${i + 1} / ${TOTAL_PAIRED}`;
+    buttonsEl.style.visibility = 'hidden';
+    promptEl.textContent = 'Listen to Tone A...';
+    await playTone(bands[currentPair.a]);
+    await wait(500);
+    promptEl.textContent = 'Listen to Tone B...';
+    await playTone(bands[currentPair.b]);
+    promptEl.textContent = 'Which was louder?';
+    buttonsEl.style.visibility = 'visible';
+    results[currentPair.a].appearances++;
+    results[currentPair.b].appearances++;
+    pairedWaiting = true;
+    await waitForPairedResponse();
+    pairedWaiting = false;
+    await wait(500);
+  }
+
+  if (!stopped) showResults();
+}
+
+let pairedResolve = null;
+function waitForPairedResponse() {
+  return new Promise(resolve => { pairedResolve = resolve; });
+}
+
+function pairedChoice(choice) {
+  if (!pairedWaiting) return;
+  if (state === 'running' && currentPair) {
+    if (choice === 'A') {
+      results[currentPair.a].score++;
+      results[currentPair.b].score--;
+    } else if (choice === 'B') {
+      results[currentPair.b].score++;
+      results[currentPair.a].score--;
+    }
+    // 'same' = no score change
+  }
+  document.getElementById('paired-buttons').style.visibility = 'hidden';
+  if (pairedResolve) { pairedResolve(); pairedResolve = null; }
+}
+
+// --- Control ---
+function startRun() {
+  ensureAudioCtx();
+  if (selectedMode === 'random') {
+    runRandom();
+  } else {
+    runPaired();
+  }
+}
+
+function stopEarly() {
+  stopped = true;
+  canRespond = false;
+  pairedWaiting = false;
+  if (pairedResolve) { pairedResolve(); pairedResolve = null; }
+  showResults();
+}
+
+// --- Results ---
+function showResults() {
+  state = 'results';
+  showScreen('screen-results');
+
+  const container = document.getElementById('histogram');
+  container.innerHTML = '';
+
+  if (selectedMode === 'random') {
+    document.getElementById('results-title').textContent = 'Click Rate by Frequency Band';
+    renderRandomHistogram(container);
+  } else {
+    document.getElementById('results-title').textContent = 'Relative Loudness Score by Frequency Band';
+    renderPairedHistogram(container);
+  }
+}
+
+function renderRandomHistogram(container) {
+  const values = [];
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const r = results[b];
+    values.push(r.presentations > 0 ? r.clicks / r.presentations : 0);
+  }
+
+  const mean = values.reduce((a, v) => a + v, 0) / values.length;
+  const stdDev = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length);
+  const threshold = mean + stdDev;
+  const maxVal = Math.max(...values, 0.01);
+
+  const chart = document.createElement('div');
+  chart.className = 'histogram-chart';
+
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const barContainer = document.createElement('div');
+    barContainer.className = 'bar-container';
+
+    const valueLabel = document.createElement('div');
+    valueLabel.className = 'bar-value';
+    valueLabel.textContent = (values[b] * 100).toFixed(0) + '%';
+
+    const bar = document.createElement('div');
+    bar.className = 'bar' + (values[b] > threshold ? ' hot' : '');
+    bar.style.height = (values[b] / maxVal * 200) + 'px';
+
+    const label = document.createElement('div');
+    label.className = 'bar-label';
+    label.textContent = formatFreq(bands[b]);
+
+    barContainer.appendChild(valueLabel);
+    barContainer.appendChild(bar);
+    barContainer.appendChild(label);
+    chart.appendChild(barContainer);
+  }
+
+  container.appendChild(chart);
+}
+
+function renderPairedHistogram(container) {
+  const values = [];
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const r = results[b];
+    values.push(r.appearances > 0 ? r.score / r.appearances : 0);
+  }
+
+  const mean = values.reduce((a, v) => a + v, 0) / values.length;
+  const stdDev = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length);
+  const threshold = mean + stdDev;
+  const maxAbs = Math.max(...values.map(Math.abs), 0.01);
+
+  const chart = document.createElement('div');
+  chart.className = 'histogram-chart';
+  chart.style.alignItems = 'center'; // center for pos/neg bars
+
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const barContainer = document.createElement('div');
+    barContainer.className = 'bar-container';
+    barContainer.style.justifyContent = 'center';
+    barContainer.style.height = '220px';
+    barContainer.style.position = 'relative';
+
+    const valueLabel = document.createElement('div');
+    valueLabel.className = 'bar-value';
+    valueLabel.textContent = values[b].toFixed(2);
+    valueLabel.style.position = 'absolute';
+    valueLabel.style.top = values[b] >= 0 ? (100 - values[b] / maxAbs * 100 - 14) + 'px' : (110 + values[b] / maxAbs * 0 + 2) + 'px';
+
+    const bar = document.createElement('div');
+    bar.className = 'bar' + (values[b] > threshold ? ' hot' : '');
+    const height = Math.abs(values[b]) / maxAbs * 100;
+    bar.style.height = height + 'px';
+    bar.style.position = 'absolute';
+    bar.style.width = '100%';
+
+    if (values[b] >= 0) {
+      bar.style.bottom = '110px';
+      bar.style.borderRadius = '3px 3px 0 0';
+      valueLabel.style.top = (110 - height - 14) + 'px';
+    } else {
+      bar.style.top = '110px';
+      bar.style.borderRadius = '0 0 3px 3px';
+      bar.style.background = values[b] < -(mean - stdDev) ? '#e63946' : '#4361ee';
+      valueLabel.style.top = (110 + height + 2) + 'px';
+    }
+
+    const label = document.createElement('div');
+    label.className = 'bar-label';
+    label.textContent = formatFreq(bands[b]);
+    label.style.position = 'absolute';
+    label.style.bottom = '0';
+
+    // Zero line marker
+    const zeroLine = document.createElement('div');
+    zeroLine.style.position = 'absolute';
+    zeroLine.style.top = '110px';
+    zeroLine.style.width = '100%';
+    zeroLine.style.height = '1px';
+    zeroLine.style.background = '#555';
+
+    barContainer.appendChild(zeroLine);
+    barContainer.appendChild(valueLabel);
+    barContainer.appendChild(bar);
+    barContainer.appendChild(label);
+    chart.appendChild(barContainer);
+  }
+
+  container.appendChild(chart);
+}
+
+// --- Keyboard Shortcuts ---
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && selectedMode === 'random' && (state === 'running' || state === 'warmup')) {
+    e.preventDefault();
+    markLoud();
+  }
+  if (selectedMode === 'paired' && pairedWaiting) {
+    if (e.key === '1') { e.preventDefault(); pairedChoice('A'); }
+    if (e.key === '2') { e.preventDefault(); pairedChoice('same'); }
+    if (e.key === '3') { e.preventDefault(); pairedChoice('B'); }
+  }
+});
+</script>
+</body>
+</html>
