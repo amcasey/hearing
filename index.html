@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hearing Tools</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+h1 { font-size: 1.8rem; margin-bottom: 30px; }
+.tools { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 400px; }
+.tools a {
+  display: block;
+  padding: 18px 24px;
+  font-size: 1.1rem;
+  text-align: center;
+  text-decoration: none;
+  color: #fff;
+  background: #4361ee;
+  border-radius: 10px;
+  transition: background 0.15s, transform 0.1s;
+}
+.tools a:hover { background: #3a56d4; transform: translateY(-2px); }
+.tools a:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+<h1>Hearing Tools</h1>
+<div class="tools">
+  <a href="hotspots.html">Frequency Response Test</a>
+  <a href="tinnitus.html">Tinnitus Frequency Matcher</a>
+  <a href="recorder.html">Meeting Spectrum Logger</a>
+</div>
+</body>
+</html>
