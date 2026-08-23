@@ -122,6 +122,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
   border-radius: 12px;
   padding: 16px;
   margin: 16px 0;
+  overflow-x: auto;
 }
 .snapshot-chart {
   display: flex;
@@ -130,6 +131,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
   height: 240px;
   gap: 2px;
   padding: 0 10px;
+  min-width: fit-content;
 }
 .snap-bar-container {
   display: flex;
@@ -244,7 +246,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
     <p class="instructions">
       Bands that were consistently louder during problem moments vs. the session average.
     </p>
-    <div id="aggregate-chart"></div>
+    <div id="aggregate-chart" style="overflow-x: auto;"></div>
     <div class="legend" style="text-align: center;">
       <span class="elevated-swatch"></span> Elevated during problems &nbsp;&nbsp;
       <span class="marker-swatch"></span> Normal &nbsp;&nbsp;
@@ -252,7 +254,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
     </div>
     <h2 style="margin-top: 20px;">Session Average Spectrum</h2>
     <p class="instructions">Average level per frequency band across the entire recording.</p>
-    <div id="overall-chart"></div>
+    <div id="overall-chart" style="overflow-x: auto;"></div>
   </div>
   <div style="text-align: center; margin-top: 20px;">
     <button class="btn btn-primary" onclick="startRecording()">New Recording</button>
