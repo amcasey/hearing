@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tinnitus Frequency Matcher</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff; }
+  .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+  .container {
+    max-width: 480px;
+    width: 100%;
+    background: #16213e;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  .freq-display {
+    text-align: center;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #e94560;
+    margin: 1rem 0 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .freq-unit { font-size: 1rem; color: #888; font-weight: 400; }
+  .range-display {
+    text-align: center;
+    color: #666;
+    font-size: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+  .btn-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  button {
+    flex: 1;
+    padding: 0.85rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  button:active { transform: scale(0.97); }
+  .btn-lower { background: #0f3460; color: #e0e0e0; }
+  .btn-lower:hover { background: #1a4a7a; }
+  .btn-match { background: #e94560; color: #fff; }
+  .btn-match:hover { background: #ff6b81; }
+  .btn-higher { background: #0f3460; color: #e0e0e0; }
+  .btn-higher:hover { background: #1a4a7a; }
+  .btn-play { background: #533483; color: #fff; }
+  .btn-play:hover { background: #6a45a0; }
+  .btn-restart { background: #333; color: #ccc; }
+  .btn-restart:hover { background: #444; }
+  .control-group {
+    margin-bottom: 1.25rem;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 0.4rem;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #e94560;
+    height: 6px;
+    cursor: pointer;
+  }
+  .phase-label {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #e94560;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.75rem;
+  }
+  .step-count {
+    text-align: center;
+    color: #555;
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+  }
+  .result {
+    text-align: center;
+    padding: 1.5rem;
+  }
+  .result h2 { color: #e94560; margin-bottom: 0.5rem; }
+  .result .big-freq {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .instructions {
+    text-align: center;
+    color: #888;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Tinnitus Frequency Matcher</h1>
+<p class="subtitle">Find the frequency of your tinnitus tone</p>
+<div class="container">
+
+  <!-- Start screen -->
+  <div id="start-screen">
+    <p class="instructions">
+      This tool helps you identify the frequency of a tonal tinnitus
+      by narrowing down the range with a series of comparisons,
+      then fine-tuning with a slider.
+      <br><br>
+      Use headphones for best results. Start at a low volume.
+    </p>
+    <div class="control-group">
+      <label for="volume-start">Volume</label>
+      <input type="range" id="volume-start" min="0" max="1" step="0.01" value="0.15">
+    </div>
+    <button class="btn-play" onclick="beginBisection()" style="width:100%">Start</button>
+  </div>
+
+  <!-- Bisection screen -->
+  <div id="bisect-screen" class="hidden">
+    <div class="phase-label">Bisection</div>
+    <div class="step-count" id="step-count"></div>
+    <p class="instructions">
+      Is your tinnitus tone <strong>higher</strong> or <strong>lower</strong> than this?
+    </p>
+    <div class="freq-display" id="bisect-freq"></div>
+    <div class="range-display" id="bisect-range"></div>
+    <div class="btn-row">
+      <button class="btn-lower" onclick="bisect('lower')">&#x25BC; Lower</button>
+      <button class="btn-match" onclick="bisect('match')">Close enough</button>
+      <button class="btn-higher" onclick="bisect('higher')">&#x25B2; Higher</button>
+    </div>
+    <div class="control-group">
+      <label for="volume-bisect">Volume</label>
+      <input type="range" id="volume-bisect" min="0" max="1" step="0.01" value="0.15">
+    </div>
+    <button class="btn-play" id="play-btn-bisect" onclick="togglePlay()" style="width:100%">Play</button>
+  </div>
+
+  <!-- Fine-tune screen -->
+  <div id="fine-screen" class="hidden">
+    <div class="phase-label">Fine-tuning</div>
+    <p class="instructions">
+      Drag the slider slowly to match your tinnitus pitch.
+    </p>
+    <div class="freq-display" id="fine-freq"></div>
+    <div class="range-display" id="fine-range"></div>
+    <div class="control-group">
+      <label for="freq-slider">Frequency</label>
+      <input type="range" id="freq-slider" min="0" max="1" step="0.001" value="0.5">
+    </div>
+    <div class="control-group">
+      <label for="volume-fine">Volume</label>
+      <input type="range" id="volume-fine" min="0" max="1" step="0.01" value="0.15">
+    </div>
+    <div class="btn-row">
+      <button class="btn-match" onclick="finishMatch()">This is it</button>
+    </div>
+    <button class="btn-play" id="play-btn-fine" onclick="togglePlay()" style="width:100%">Play</button>
+  </div>
+
+  <!-- Result screen -->
+  <div id="result-screen" class="hidden">
+    <div class="result">
+      <h2>Your tinnitus frequency</h2>
+      <div class="big-freq" id="result-freq"></div>
+      <p class="freq-unit" style="margin-top:0.5rem">Hz</p>
+    </div>
+    <button class="btn-restart" onclick="restart()" style="width:100%; margin-top:1.5rem">Start over</button>
+  </div>
+
+</div>
+
+<script>
+const MIN_FREQ = 200;
+const MAX_FREQ = 8000;
+const BISECT_THRESHOLD = 50; // Hz — switch to slider when range is this narrow
+
+let audioCtx = null;
+let oscillator = null;
+let gainNode = null;
+let panNode = null;
+let playing = false;
+
+let lo = MIN_FREQ;
+let hi = MAX_FREQ;
+let currentFreq = 0;
+let step = 0;
+
+// --- Logarithmic frequency helpers ---
+function logMid(a, b) {
+  return Math.exp((Math.log(a) + Math.log(b)) / 2);
+}
+
+// Map slider [0,1] to frequency [lo,hi] logarithmically
+function sliderToFreq(t, a, b) {
+  return a * Math.pow(b / a, t);
+}
+
+function freqToSlider(f, a, b) {
+  return Math.log(f / a) / Math.log(b / a);
+}
+
+// --- Audio ---
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function startTone(freq) {
+  ensureAudioCtx();
+  if (oscillator) stopTone();
+
+  oscillator = audioCtx.createOscillator();
+  gainNode = audioCtx.createGain();
+  panNode = audioCtx.createStereoPanner();
+  panNode.pan.setValueAtTime(1, audioCtx.currentTime); // right channel only
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+  const vol = getVolume();
+  gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+  gainNode.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.05);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(panNode);
+  panNode.connect(audioCtx.destination);
+  oscillator.start();
+  playing = true;
+  updatePlayButtons();
+}
+
+function stopTone() {
+  if (gainNode && oscillator) {
+    const now = audioCtx.currentTime;
+    gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+    gainNode.gain.linearRampToValueAtTime(0, now + 0.05);
+    const osc = oscillator;
+    setTimeout(() => { try { osc.stop(); } catch(e) {} }, 80);
+  }
+  oscillator = null;
+  gainNode = null;
+  playing = false;
+  updatePlayButtons();
+}
+
+function setFrequency(freq) {
+  currentFreq = freq;
+  if (oscillator) {
+    oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  }
+}
+
+function getVolume() {
+  const screen = currentScreen();
+  if (screen === 'start') return parseFloat(document.getElementById('volume-start').value);
+  if (screen === 'bisect') return parseFloat(document.getElementById('volume-bisect').value);
+  if (screen === 'fine') return parseFloat(document.getElementById('volume-fine').value);
+  return 0.15;
+}
+
+function setVolume(v) {
+  if (gainNode && audioCtx) {
+    gainNode.gain.setValueAtTime(v, audioCtx.currentTime);
+  }
+}
+
+function currentScreen() {
+  if (!document.getElementById('start-screen').classList.contains('hidden')) return 'start';
+  if (!document.getElementById('bisect-screen').classList.contains('hidden')) return 'bisect';
+  if (!document.getElementById('fine-screen').classList.contains('hidden')) return 'fine';
+  return 'result';
+}
+
+function togglePlay() {
+  if (playing) {
+    stopTone();
+  } else {
+    startTone(currentFreq);
+  }
+}
+
+function updatePlayButtons() {
+  const label = playing ? 'Stop' : 'Play';
+  const b1 = document.getElementById('play-btn-bisect');
+  const b2 = document.getElementById('play-btn-fine');
+  if (b1) b1.textContent = label;
+  if (b2) b2.textContent = label;
+}
+
+// --- Screens ---
+function showScreen(id) {
+  ['start-screen', 'bisect-screen', 'fine-screen', 'result-screen'].forEach(s => {
+    document.getElementById(s).classList.toggle('hidden', s !== id);
+  });
+}
+
+function formatFreq(f) {
+  return f >= 1000 ? f.toFixed(1) : f.toFixed(0);
+}
+
+function updateBisectDisplay() {
+  const el = document.getElementById('bisect-freq');
+  el.innerHTML = formatFreq(currentFreq) + ' <span class="freq-unit">Hz</span>';
+  document.getElementById('bisect-range').textContent =
+    'Range: ' + formatFreq(lo) + ' – ' + formatFreq(hi) + ' Hz';
+  document.getElementById('step-count').textContent = 'Step ' + step;
+}
+
+// --- Bisection ---
+function beginBisection() {
+  lo = MIN_FREQ;
+  hi = MAX_FREQ;
+  step = 1;
+  currentFreq = logMid(lo, hi);
+
+  // Sync volume from start screen
+  const vol = parseFloat(document.getElementById('volume-start').value);
+  document.getElementById('volume-bisect').value = vol;
+  document.getElementById('volume-fine').value = vol;
+
+  showScreen('bisect-screen');
+  updateBisectDisplay();
+  startTone(currentFreq);
+}
+
+function bisect(direction) {
+  if (direction === 'match') {
+    transitionToFine();
+    return;
+  }
+
+  if (direction === 'higher') {
+    lo = currentFreq;
+  } else {
+    hi = currentFreq;
+  }
+
+  step++;
+
+  // Check if range is narrow enough to switch to fine-tuning
+  if (hi - lo <= BISECT_THRESHOLD) {
+    transitionToFine();
+    return;
+  }
+
+  currentFreq = logMid(lo, hi);
+  setFrequency(currentFreq);
+  updateBisectDisplay();
+}
+
+// --- Fine-tuning ---
+function transitionToFine() {
+  // Expand the range a little for slider comfort
+  const center = currentFreq;
+  const pad = Math.max((hi - lo) * 0.5, 25);
+  lo = Math.max(MIN_FREQ, lo - pad);
+  hi = Math.min(MAX_FREQ, hi + pad);
+
+  const slider = document.getElementById('freq-slider');
+  slider.value = freqToSlider(currentFreq, lo, hi);
+
+  showScreen('fine-screen');
+  updateFineDisplay();
+
+  if (!playing) startTone(currentFreq);
+}
+
+function updateFineDisplay() {
+  const el = document.getElementById('fine-freq');
+  el.innerHTML = formatFreq(currentFreq) + ' <span class="freq-unit">Hz</span>';
+  document.getElementById('fine-range').textContent =
+    formatFreq(lo) + ' – ' + formatFreq(hi) + ' Hz';
+}
+
+function finishMatch() {
+  stopTone();
+  document.getElementById('result-freq').textContent = formatFreq(currentFreq);
+  showScreen('result-screen');
+}
+
+function restart() {
+  stopTone();
+  lo = MIN_FREQ;
+  hi = MAX_FREQ;
+  step = 0;
+  currentFreq = 0;
+  showScreen('start-screen');
+}
+
+// --- Event listeners ---
+document.getElementById('freq-slider').addEventListener('input', function() {
+  currentFreq = sliderToFreq(parseFloat(this.value), lo, hi);
+  setFrequency(currentFreq);
+  updateFineDisplay();
+});
+
+['volume-start', 'volume-bisect', 'volume-fine'].forEach(id => {
+  document.getElementById(id).addEventListener('input', function() {
+    setVolume(parseFloat(this.value));
+    // Sync all volume sliders
+    const v = this.value;
+    document.getElementById('volume-start').value = v;
+    document.getElementById('volume-bisect').value = v;
+    document.getElementById('volume-fine').value = v;
+  });
+});
+</script>
+</body>
+</html>
