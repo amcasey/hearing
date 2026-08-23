@@ -127,7 +127,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 200px;
+  height: 240px;
   gap: 2px;
   padding: 0 10px;
 }
@@ -156,7 +156,7 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
-  max-height: 50px;
+  height: 35px;
   overflow: hidden;
 }
 .snap-bar-value {
@@ -250,6 +250,9 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
       <span class="marker-swatch"></span> Normal &nbsp;&nbsp;
       <span class="baseline-swatch"></span> Session baseline
     </div>
+    <h2 style="margin-top: 20px;">Session Average Spectrum</h2>
+    <p class="instructions">Average level per frequency band across the entire recording.</p>
+    <div id="overall-chart"></div>
   </div>
   <div style="text-align: center; margin-top: 20px;">
     <button class="btn btn-primary" onclick="startRecording()">New Recording</button>
@@ -513,6 +516,9 @@ function showReview() {
     });
   }
 
+  // Overall session histogram
+  renderOverallHistogram(baseline);
+
   // Aggregate chart: average elevation across all markers
   renderAggregateChart(markerSnapshots, baseline);
 }
@@ -565,6 +571,25 @@ function showSnapshot(snap, baseline, idx) {
 
   detailEl.innerHTML = html;
   detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderOverallHistogram(baseline) {
+  const container = document.getElementById('overall-chart');
+  const maxDb = Math.max(...baseline);
+  const minDb = Math.min(...baseline, -80);
+  const range = Math.max(maxDb - minDb, 1);
+
+  let html = '<div class="snapshot-chart">';
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const h = Math.max(1, ((baseline[b] - minDb) / range) * 180);
+    html += `<div class="snap-bar-container">`;
+    html += `<div class="snap-bar-value">${baseline[b].toFixed(1)}</div>`;
+    html += `<div class="snap-bar normal" style="height:${h}px;"></div>`;
+    html += `<div class="snap-bar-label">${formatFreq(bandFreqs[b])}</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 function renderAggregateChart(markerSnapshots, baseline) {
