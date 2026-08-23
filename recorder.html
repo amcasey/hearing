@@ -336,15 +336,16 @@ function sampleSpectrum() {
     const lowBin = Math.max(0, Math.floor(bandEdges[b] / binWidth));
     const highBin = Math.min(freqData.length - 1, Math.ceil(bandEdges[b + 1] / binWidth));
 
-    // Average dB values in this band
+    // Energy-average bins in this band (dB → linear → average → dB)
     let sum = 0;
     let count = 0;
     for (let i = lowBin; i <= highBin; i++) {
       const val = freqData[i];
-      sum += Math.max(val, -100);
+      if (isNaN(val)) continue; // skip invalid bins
+      sum += Math.pow(10, val / 10); // -Infinity → 0 naturally
       count++;
     }
-    bandAmplitudes[b] = count > 0 ? sum / count : -100;
+    bandAmplitudes[b] = count > 0 ? 10 * Math.log10(sum / count) : -100;
   }
 
   // Overall SPL: RMS of all band amplitudes (in dB domain, use energy average)
@@ -442,18 +443,18 @@ function showReview() {
     return;
   }
 
-  // Compute session baseline: mean dB per band across all samples
+  // Compute session baseline: energy-average dB per band across all samples
   const baseline = new Float32Array(NUM_BANDS);
   for (let b = 0; b < NUM_BANDS; b++) {
     let sum = 0;
-    for (const s of samples) { sum += s.bands[b]; }
-    baseline[b] = sum / samples.length;
+    for (const s of samples) { sum += Math.pow(10, s.bands[b] / 10); }
+    baseline[b] = 10 * Math.log10(sum / samples.length);
   }
 
-  // Compute baseline SPL
+  // Compute baseline SPL (energy average)
   let splSum = 0;
-  for (const s of samples) { splSum += s.spl; }
-  const baselineSpl = splSum / samples.length;
+  for (const s of samples) { splSum += Math.pow(10, s.spl / 10); }
+  const baselineSpl = 10 * Math.log10(splSum / samples.length);
 
   // Summary stats
   const statsEl = document.getElementById('summary-stats');
@@ -476,11 +477,11 @@ function showReview() {
     let avgSpl = 0;
     for (let b = 0; b < NUM_BANDS; b++) {
       let sum = 0;
-      for (const s of windowSamples) { sum += s.bands[b]; }
-      avgBands[b] = sum / windowSamples.length;
+      for (const s of windowSamples) { sum += Math.pow(10, s.bands[b] / 10); }
+      avgBands[b] = 10 * Math.log10(sum / windowSamples.length);
     }
-    for (const s of windowSamples) { avgSpl += s.spl; }
-    avgSpl /= windowSamples.length;
+    for (const s of windowSamples) { avgSpl += Math.pow(10, s.spl / 10); }
+    avgSpl = 10 * Math.log10(avgSpl / windowSamples.length);
 
     // Find bands elevated above baseline
     const elevatedBands = [];
