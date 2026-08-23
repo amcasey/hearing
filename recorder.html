@@ -192,6 +192,59 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
 }
 .stat-box .stat-value { font-size: 1.3rem; color: #fff; }
 .stat-box .stat-label { font-size: 0.75rem; color: #888; margin-top: 2px; }
+
+/* Timeline scrubber */
+.timeline-section {
+  margin: 20px 0;
+  background: #16213e;
+  border-radius: 12px;
+  padding: 16px;
+}
+.timeline-controls {
+  margin-top: 4px;
+}
+.timeline-controls .time-display {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  font-size: 0.9rem;
+  min-width: 110px;
+}
+.timeline-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #333;
+  outline: none;
+}
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4361ee;
+  cursor: pointer;
+}
+.timeline-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4361ee;
+  cursor: pointer;
+  border: none;
+}
+.timeline-track {
+  position: relative;
+  width: 100%;
+  height: 40px;
+  margin-top: 4px;
+}
+.timeline-track canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+}
 </style>
 </head>
 <body>
@@ -260,6 +313,16 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
       <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#f4d35e;"></span> Median &nbsp;&nbsp;
       <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#f77f00;"></span> 90th pctl &nbsp;&nbsp;
       <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#e63946;"></span> Max
+    </div>
+    <h2 style="margin-top: 20px;">Timeline</h2>
+    <p class="instructions">Scrub through the recording to see the spectrum at any point.</p>
+    <div class="timeline-section" id="timeline-section">
+      <div id="timeline-chart" style="overflow-x: auto;"></div>
+      <div class="timeline-track"><canvas id="timeline-canvas"></canvas></div>
+      <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="0" value="0" style="width:100%; margin-top:2px;">
+      <div class="timeline-controls">
+        <span class="time-display" id="timeline-time">00:00 / 00:00</span>
+      </div>
     </div>
   </div>
   <div style="text-align: center; margin-top: 20px;">
@@ -534,6 +597,9 @@ function showReview() {
 
   // Aggregate chart: average elevation across all markers
   renderAggregateChart(markerSnapshots, baseline);
+
+  // Timeline scrubber
+  initTimeline(baseline);
 }
 
 function showSnapshot(snap, baseline, idx) {
@@ -681,6 +747,106 @@ function renderAggregateChart(markerSnapshots, baseline) {
   }
   html += '</div>';
 
+  container.innerHTML = html;
+}
+
+// --- Timeline Scrubber ---
+function initTimeline(baseline) {
+  if (samples.length === 0) return;
+
+  const slider = document.getElementById('timeline-slider');
+  slider.max = samples.length - 1;
+  slider.value = 0;
+
+  // Draw overview canvas (SPL over time with marker lines)
+  drawTimelineOverview();
+
+  // Initial render
+  renderTimelineSample(0, baseline);
+
+  slider.addEventListener('input', () => {
+    renderTimelineSample(parseInt(slider.value), baseline);
+  });
+}
+
+function drawTimelineOverview() {
+  const canvas = document.getElementById('timeline-canvas');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const w = rect.width;
+  const h = rect.height;
+
+  // Find SPL range
+  let minSpl = Infinity, maxSpl = -Infinity;
+  for (const s of samples) {
+    if (s.spl < minSpl) minSpl = s.spl;
+    if (s.spl > maxSpl) maxSpl = s.spl;
+  }
+  const splRange = Math.max(maxSpl - minSpl, 1);
+
+  // Background
+  ctx.fillStyle = '#0f1629';
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw marker lines
+  const totalTime = samples[samples.length - 1].time;
+  ctx.strokeStyle = 'rgba(230, 57, 70, 0.5)';
+  ctx.lineWidth = 1;
+  for (const mTime of markers) {
+    const x = (mTime / totalTime) * w;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+
+  // Draw SPL waveform
+  ctx.strokeStyle = '#4361ee';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < samples.length; i++) {
+    const x = (i / (samples.length - 1)) * w;
+    const y = h - ((samples[i].spl - minSpl) / splRange) * (h - 4) - 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function renderTimelineSample(idx, baseline) {
+  const sample = samples[idx];
+  const timeDisplay = document.getElementById('timeline-time');
+  const totalTime = samples[samples.length - 1].time;
+  timeDisplay.textContent = `${formatTime(sample.time)} / ${formatTime(totalTime)}`;
+
+  const container = document.getElementById('timeline-chart');
+
+  const allVals = [...sample.bands, ...baseline];
+  const maxDb = Math.max(...allVals);
+  const minDb = Math.min(...allVals, -80);
+  const range = Math.max(maxDb - minDb, 1);
+
+  let html = '<div class="snapshot-chart">';
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const val = sample.bands[b];
+    const baseVal = baseline[b];
+    const isElevated = (val - baseVal) > 3;
+    const valH = Math.max(1, ((val - minDb) / range) * 180);
+    const baseH = Math.max(1, ((baseVal - minDb) / range) * 180);
+
+    html += `<div class="snap-bar-container">`;
+    html += `<div class="snap-bar-value">${(val - baseVal).toFixed(1)}</div>`;
+    html += `<div style="position:relative; width:100%; height:180px;">`;
+    html += `<div class="snap-bar baseline" style="position:absolute; bottom:0; width:100%; height:${baseH}px;"></div>`;
+    html += `<div class="snap-bar ${isElevated ? 'elevated' : 'normal'}" style="position:absolute; bottom:0; width:50%; left:25%; height:${valH}px;"></div>`;
+    html += `</div>`;
+    html += `<div class="snap-bar-label">${formatFreq(bandFreqs[b])}</div>`;
+    html += `</div>`;
+  }
+  html += '</div>';
   container.innerHTML = html;
 }
 
