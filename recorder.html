@@ -252,9 +252,15 @@ h2 { font-size: 1.1rem; color: #aaa; margin-bottom: 8px; }
       <span class="marker-swatch"></span> Normal &nbsp;&nbsp;
       <span class="baseline-swatch"></span> Session baseline
     </div>
-    <h2 style="margin-top: 20px;">Session Average Spectrum</h2>
-    <p class="instructions">Average level per frequency band across the entire recording.</p>
+    <h2 style="margin-top: 20px;">Session Spectrum</h2>
+    <p class="instructions">Frequency band levels across the entire recording: average, median, 90th percentile, and max.</p>
     <div id="overall-chart" style="overflow-x: auto;"></div>
+    <div class="legend" style="text-align: center;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#4361ee;"></span> Average &nbsp;&nbsp;
+      <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#f4d35e;"></span> Median &nbsp;&nbsp;
+      <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#f77f00;"></span> 90th pctl &nbsp;&nbsp;
+      <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#e63946;"></span> Max
+    </div>
   </div>
   <div style="text-align: center; margin-top: 20px;">
     <button class="btn btn-primary" onclick="startRecording()">New Recording</button>
@@ -578,16 +584,45 @@ function showSnapshot(snap, baseline, idx) {
 
 function renderOverallHistogram(baseline) {
   const container = document.getElementById('overall-chart');
-  const maxDb = Math.max(...baseline);
-  const minDb = Math.min(...baseline, -80);
+
+  // Compute per-band statistics from samples
+  const median = new Float32Array(NUM_BANDS);
+  const p90 = new Float32Array(NUM_BANDS);
+  const max = new Float32Array(NUM_BANDS);
+
+  for (let b = 0; b < NUM_BANDS; b++) {
+    const vals = samples.map(s => s.bands[b]).sort((a, c) => a - c);
+    const n = vals.length;
+    median[b] = n % 2 === 1 ? vals[(n - 1) / 2] : (vals[n / 2 - 1] + vals[n / 2]) / 2;
+    p90[b] = vals[Math.ceil(n * 0.9) - 1];
+    max[b] = vals[n - 1];
+  }
+
+  // Find global range across all series
+  const allVals = [...baseline, ...median, ...p90, ...max];
+  const maxDb = Math.max(...allVals);
+  const minDb = Math.min(...allVals, -80);
   const range = Math.max(maxDb - minDb, 1);
 
   let html = '<div class="snapshot-chart">';
   for (let b = 0; b < NUM_BANDS; b++) {
-    const h = Math.max(1, ((baseline[b] - minDb) / range) * 180);
+    const hAvg = Math.max(1, ((baseline[b] - minDb) / range) * 180);
+    const hMed = Math.max(1, ((median[b] - minDb) / range) * 180);
+    const hP90 = Math.max(1, ((p90[b] - minDb) / range) * 180);
+    const hMax = Math.max(1, ((max[b] - minDb) / range) * 180);
+
     html += `<div class="snap-bar-container">`;
     html += `<div class="snap-bar-value">${baseline[b].toFixed(1)}</div>`;
-    html += `<div class="snap-bar normal" style="height:${h}px;"></div>`;
+    html += `<div style="position:relative; width:100%; height:180px;">`;
+    // Max (behind)
+    html += `<div style="position:absolute; bottom:0; width:100%; height:${hMax}px; background:#e63946; border-radius:3px 3px 0 0; opacity:0.4;"></div>`;
+    // P90
+    html += `<div style="position:absolute; bottom:0; width:100%; height:${hP90}px; background:#f77f00; border-radius:3px 3px 0 0; opacity:0.5;"></div>`;
+    // Median
+    html += `<div style="position:absolute; bottom:0; width:100%; height:${hMed}px; background:#f4d35e; border-radius:3px 3px 0 0; opacity:0.6;"></div>`;
+    // Average (narrower, front)
+    html += `<div style="position:absolute; bottom:0; width:50%; left:25%; height:${hAvg}px; background:#4361ee; border-radius:3px 3px 0 0;"></div>`;
+    html += `</div>`;
     html += `<div class="snap-bar-label">${formatFreq(bandFreqs[b])}</div>`;
     html += `</div>`;
   }
