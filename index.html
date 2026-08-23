@@ -49,12 +49,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
   -webkit-user-select: none;
 }
 .btn-loud:hover { background: #ff4d5a; }
-.btn-choice {
-  font-size: 1.5rem;
-  padding: 20px 40px;
-  border-radius: 12px;
-  min-width: 120px;
-}
+
 .mode-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin: 20px 0; }
 .mode-card {
   background: #16213e;
@@ -142,11 +137,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
   color: #f0a500;
   margin-bottom: 10px;
 }
-.paired-prompt {
-  font-size: 1.1rem;
-  color: #ccc;
-  margin-bottom: 16px;
-}
+
 
 /* Sweep mode */
 .sweep-freq-display {
@@ -215,10 +206,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
       <h3>Random Tones</h3>
       <p>Hear tones at random frequencies. Click "LOUD" whenever one sounds unexpectedly loud. Fast and intuitive.</p>
     </div>
-    <div class="mode-card" data-mode="paired" onclick="selectMode('paired')">
-      <h3>Paired Comparison</h3>
-      <p>Hear two tones in sequence. Pick which sounds louder. More precise, takes longer.</p>
-    </div>
+
     <div class="mode-card" data-mode="sweep" onclick="selectMode('sweep')">
       <h3>Frequency Sweep</h3>
       <p>A continuous tone sweeps up and down. Hold the button while it sounds too loud. Fast overview.</p>
@@ -238,19 +226,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
   <span class="stop-link" onclick="stopEarly()">Stop early &amp; see results</span>
 </div>
 
-<!-- Paired Mode Run Screen -->
-<div id="screen-paired" class="screen">
-  <div class="warmup-notice" id="paired-warmup">⚡ Warm-up (not recorded)</div>
-  <div class="progress" id="paired-progress">Pair 0 / 100</div>
-  <div class="paired-prompt" id="paired-prompt">Listen...</div>
-  <div id="paired-buttons" style="margin: 20px 0; visibility: hidden;">
-    <button class="btn btn-choice btn-primary" onclick="pairedChoice('A')">A louder<br><small>(1)</small></button>
-    <button class="btn btn-choice btn-secondary" onclick="pairedChoice('same')">Same<br><small>(2)</small></button>
-    <button class="btn btn-choice btn-primary" onclick="pairedChoice('B')">B louder<br><small>(3)</small></button>
-  </div>
-  <p class="instructions">Listen to both tones, then pick which sounded louder (or "Same").<br>Keyboard: <strong>1</strong> = A, <strong>2</strong> = Same, <strong>3</strong> = B</p>
-  <span class="stop-link" onclick="stopEarly()">Stop early &amp; see results</span>
-</div>
+
 
 <!-- Sweep Mode Run Screen -->
 <div id="screen-sweep" class="screen">
@@ -291,7 +267,6 @@ const TONE_DURATION = 0.5;       // seconds
 const FADE_DURATION = 0.01;      // 10ms fade in/out
 const SILENCE_DURATION = 1.0;    // seconds between tones (random mode)
 const PRESENTATIONS_PER_BAND = 5;
-const NUM_PAIRS = 100;
 const WARMUP_COUNT = 10;
 const SWEEP_DURATION = 12;       // seconds per sweep
 const SWEEP_ROUND_TRIPS = 3;    // up+down = 1 round trip
@@ -299,7 +274,6 @@ const SWEEP_SAMPLE_INTERVAL = 50; // ms between samples
 
 // --- Derived ---
 const TOTAL_RANDOM = PRESENTATIONS_PER_BAND * NUM_BANDS;
-const TOTAL_PAIRED = NUM_PAIRS;
 
 // Generate 24 log-spaced center frequencies
 const bands = [];
@@ -321,9 +295,7 @@ let canRespond = false;
 let respondedToCurrentTone = false;
 let stopped = false;
 
-// Paired-specific
-let currentPair = null; // { a: bandIdx, b: bandIdx }
-let pairedWaiting = false;
+
 
 // Sweep-specific
 let sweepHolding = false;
@@ -393,25 +365,7 @@ function generateRandomSequence() {
   return { warmup, deck };
 }
 
-function generatePairedSequence() {
-  const deck = [];
-  for (let i = 0; i < NUM_PAIRS; i++) {
-    const a = Math.floor(Math.random() * NUM_BANDS);
-    let b = Math.floor(Math.random() * (NUM_BANDS - 1));
-    if (b >= a) b++;
-    deck.push({ a, b });
-  }
 
-  const warmup = [];
-  for (let i = 0; i < WARMUP_COUNT; i++) {
-    const a = Math.floor(Math.random() * NUM_BANDS);
-    let b = Math.floor(Math.random() * (NUM_BANDS - 1));
-    if (b >= a) b++;
-    warmup.push({ a, b });
-  }
-
-  return { warmup, deck };
-}
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -504,87 +458,7 @@ function markLoud() {
   }
 }
 
-// --- Paired Mode ---
-async function runPaired() {
-  showScreen('screen-paired');
-  const { warmup, deck } = generatePairedSequence();
 
-  // Init results
-  results = {};
-  for (let b = 0; b < NUM_BANDS; b++) {
-    results[b] = { appearances: 0, score: 0 };
-  }
-
-  stopped = false;
-  const buttonsEl = document.getElementById('paired-buttons');
-  const promptEl = document.getElementById('paired-prompt');
-
-  // Warmup
-  state = 'warmup';
-  document.getElementById('paired-warmup').style.display = 'block';
-  for (let i = 0; i < warmup.length && !stopped; i++) {
-    document.getElementById('paired-progress').textContent = `Warm-up ${i + 1} / ${WARMUP_COUNT}`;
-    buttonsEl.style.visibility = 'hidden';
-    promptEl.textContent = 'Listen to Tone A...';
-    await playTone(bands[warmup[i].a]);
-    await wait(500);
-    promptEl.textContent = 'Listen to Tone B...';
-    await playTone(bands[warmup[i].b]);
-    promptEl.textContent = 'Which was louder?';
-    buttonsEl.style.visibility = 'visible';
-    pairedWaiting = true;
-    await waitForPairedResponse();
-    pairedWaiting = false;
-    await wait(500);
-  }
-
-  if (stopped) { showResults(); return; }
-
-  // Main run
-  state = 'running';
-  document.getElementById('paired-warmup').style.display = 'none';
-  for (let i = 0; i < deck.length && !stopped; i++) {
-    currentPair = deck[i];
-    document.getElementById('paired-progress').textContent = `Pair ${i + 1} / ${TOTAL_PAIRED}`;
-    buttonsEl.style.visibility = 'hidden';
-    promptEl.textContent = 'Listen to Tone A...';
-    await playTone(bands[currentPair.a]);
-    await wait(500);
-    promptEl.textContent = 'Listen to Tone B...';
-    await playTone(bands[currentPair.b]);
-    promptEl.textContent = 'Which was louder?';
-    buttonsEl.style.visibility = 'visible';
-    results[currentPair.a].appearances++;
-    results[currentPair.b].appearances++;
-    pairedWaiting = true;
-    await waitForPairedResponse();
-    pairedWaiting = false;
-    await wait(500);
-  }
-
-  if (!stopped) showResults();
-}
-
-let pairedResolve = null;
-function waitForPairedResponse() {
-  return new Promise(resolve => { pairedResolve = resolve; });
-}
-
-function pairedChoice(choice) {
-  if (!pairedWaiting) return;
-  if (state === 'running' && currentPair) {
-    if (choice === 'A') {
-      results[currentPair.a].score++;
-      results[currentPair.b].score--;
-    } else if (choice === 'B') {
-      results[currentPair.b].score++;
-      results[currentPair.a].score--;
-    }
-    // 'same' = no score change
-  }
-  document.getElementById('paired-buttons').style.visibility = 'hidden';
-  if (pairedResolve) { pairedResolve(); pairedResolve = null; }
-}
 
 // --- Sweep Mode ---
 function freqToBand(freq) {
@@ -763,8 +637,6 @@ function startRun() {
   ensureAudioCtx();
   if (selectedMode === 'random') {
     runRandom();
-  } else if (selectedMode === 'paired') {
-    runPaired();
   } else {
     runSweep();
   }
@@ -773,10 +645,8 @@ function startRun() {
 function stopEarly() {
   stopped = true;
   canRespond = false;
-  pairedWaiting = false;
   sweepHolding = false;
   stopSweepOsc();
-  if (pairedResolve) { pairedResolve(); pairedResolve = null; }
   showResults();
 }
 
@@ -788,15 +658,10 @@ function showResults() {
   const container = document.getElementById('histogram');
   container.innerHTML = '';
 
-  if (selectedMode === 'random' || selectedMode === 'sweep') {
-    document.getElementById('results-title').textContent = selectedMode === 'sweep'
-      ? 'Marked Rate by Frequency Band'
-      : 'Click Rate by Frequency Band';
-    renderRandomHistogram(container);
-  } else {
-    document.getElementById('results-title').textContent = 'Relative Loudness Score by Frequency Band';
-    renderPairedHistogram(container);
-  }
+  document.getElementById('results-title').textContent = selectedMode === 'sweep'
+    ? 'Marked Rate by Frequency Band'
+    : 'Click Rate by Frequency Band';
+  renderRandomHistogram(container);
 }
 
 function renderRandomHistogram(container) {
@@ -841,76 +706,7 @@ function renderRandomHistogram(container) {
   container.appendChild(chart);
 }
 
-function renderPairedHistogram(container) {
-  const values = [];
-  for (let b = 0; b < NUM_BANDS; b++) {
-    const r = results[b];
-    values.push(r.appearances > 0 ? r.score / r.appearances : 0);
-  }
 
-  const mean = values.reduce((a, v) => a + v, 0) / values.length;
-  const stdDev = Math.sqrt(values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length);
-  const threshold = mean + stdDev;
-  const maxAbs = Math.max(...values.map(Math.abs), 0.01);
-
-  const chart = document.createElement('div');
-  chart.className = 'histogram-chart';
-  chart.style.alignItems = 'center'; // center for pos/neg bars
-
-  for (let b = 0; b < NUM_BANDS; b++) {
-    const barContainer = document.createElement('div');
-    barContainer.className = 'bar-container';
-    barContainer.style.justifyContent = 'center';
-    barContainer.style.height = '220px';
-    barContainer.style.position = 'relative';
-
-    const valueLabel = document.createElement('div');
-    valueLabel.className = 'bar-value';
-    valueLabel.textContent = values[b].toFixed(2);
-    valueLabel.style.position = 'absolute';
-    valueLabel.style.top = values[b] >= 0 ? (100 - values[b] / maxAbs * 100 - 14) + 'px' : (110 + values[b] / maxAbs * 0 + 2) + 'px';
-
-    const bar = document.createElement('div');
-    bar.className = 'bar' + (values[b] > threshold ? ' hot' : '');
-    const height = Math.abs(values[b]) / maxAbs * 100;
-    bar.style.height = height + 'px';
-    bar.style.position = 'absolute';
-    bar.style.width = '100%';
-
-    if (values[b] >= 0) {
-      bar.style.bottom = '110px';
-      bar.style.borderRadius = '3px 3px 0 0';
-      valueLabel.style.top = (110 - height - 14) + 'px';
-    } else {
-      bar.style.top = '110px';
-      bar.style.borderRadius = '0 0 3px 3px';
-      bar.style.background = values[b] < -(mean - stdDev) ? '#e63946' : '#4361ee';
-      valueLabel.style.top = (110 + height + 2) + 'px';
-    }
-
-    const label = document.createElement('div');
-    label.className = 'bar-label';
-    label.textContent = formatFreq(bands[b]);
-    label.style.position = 'absolute';
-    label.style.bottom = '0';
-
-    // Zero line marker
-    const zeroLine = document.createElement('div');
-    zeroLine.style.position = 'absolute';
-    zeroLine.style.top = '110px';
-    zeroLine.style.width = '100%';
-    zeroLine.style.height = '1px';
-    zeroLine.style.background = '#555';
-
-    barContainer.appendChild(zeroLine);
-    barContainer.appendChild(valueLabel);
-    barContainer.appendChild(bar);
-    barContainer.appendChild(label);
-    chart.appendChild(barContainer);
-  }
-
-  container.appendChild(chart);
-}
 
 // --- Keyboard Shortcuts ---
 document.addEventListener('keydown', (e) => {
@@ -922,11 +718,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     sweepHoldStart();
   }
-  if (selectedMode === 'paired' && pairedWaiting) {
-    if (e.key === '1') { e.preventDefault(); pairedChoice('A'); }
-    if (e.key === '2') { e.preventDefault(); pairedChoice('same'); }
-    if (e.key === '3') { e.preventDefault(); pairedChoice('B'); }
-  }
+
 });
 document.addEventListener('keyup', (e) => {
   if (e.code === 'Space' && selectedMode === 'sweep') {
