@@ -480,10 +480,14 @@ function showReview() {
     if (windowSamples.length === 0) continue;
 
     const avgBands = new Float32Array(NUM_BANDS);
+    const maxBands = new Float32Array(NUM_BANDS).fill(-Infinity);
     let avgSpl = 0;
     for (let b = 0; b < NUM_BANDS; b++) {
       let sum = 0;
-      for (const s of windowSamples) { sum += Math.pow(10, s.bands[b] / 10); }
+      for (const s of windowSamples) {
+        sum += Math.pow(10, s.bands[b] / 10);
+        if (s.bands[b] > maxBands[b]) maxBands[b] = s.bands[b];
+      }
       avgBands[b] = 10 * Math.log10(sum / windowSamples.length);
     }
     for (const s of windowSamples) { avgSpl += Math.pow(10, s.spl / 10); }
@@ -499,7 +503,7 @@ function showReview() {
     }
     elevatedBands.sort((a, c) => c.diff - a.diff);
 
-    markerSnapshots.push({ time: mTime, avgBands, avgSpl, elevatedBands, sampleCount: windowSamples.length });
+    markerSnapshots.push({ time: mTime, avgBands, maxBands, avgSpl, elevatedBands, sampleCount: windowSamples.length });
   }
 
   // Render marker list
@@ -538,10 +542,12 @@ function showSnapshot(snap, baseline, idx) {
 
   const maxDb = Math.max(
     ...snap.avgBands,
+    ...snap.maxBands,
     ...baseline
   );
   const minDb = Math.min(
     ...snap.avgBands,
+    ...snap.maxBands,
     ...baseline,
     -80
   );
@@ -552,11 +558,13 @@ function showSnapshot(snap, baseline, idx) {
 
   for (let b = 0; b < NUM_BANDS; b++) {
     const snapVal = snap.avgBands[b];
+    const maxVal = snap.maxBands[b];
     const baseVal = baseline[b];
     const isElevated = (snapVal - baseVal) > 3;
 
     // Normalize to 0-180px height
     const snapH = Math.max(1, ((snapVal - minDb) / range) * 180);
+    const maxH = Math.max(1, ((maxVal - minDb) / range) * 180);
     const baseH = Math.max(1, ((baseVal - minDb) / range) * 180);
 
     html += `<div class="snap-bar-container">`;
@@ -564,8 +572,10 @@ function showSnapshot(snap, baseline, idx) {
     html += `<div style="position:relative; width:100%; height:180px;">`;
     // Baseline bar (behind)
     html += `<div class="snap-bar baseline" style="position:absolute; bottom:0; width:100%; height:${baseH}px;"></div>`;
-    // Snapshot bar (in front, narrower)
-    html += `<div class="snap-bar ${isElevated ? 'elevated' : 'normal'}" style="position:absolute; bottom:0; width:70%; left:15%; height:${snapH}px;"></div>`;
+    // Max bar (behind snapshot, full width, semi-transparent)
+    html += `<div style="position:absolute; bottom:0; width:100%; height:${maxH}px; background:${isElevated ? '#e63946' : '#4361ee'}; opacity:0.25; border-radius:3px 3px 0 0;"></div>`;
+    // Snapshot average bar (in front, narrower)
+    html += `<div class="snap-bar ${isElevated ? 'elevated' : 'normal'}" style="position:absolute; bottom:0; width:50%; left:25%; height:${snapH}px;"></div>`;
     html += `</div>`;
     html += `<div class="snap-bar-label">${formatFreq(bandFreqs[b])}</div>`;
     html += `</div>`;
@@ -574,7 +584,8 @@ function showSnapshot(snap, baseline, idx) {
   html += '</div>';
   html += `<div class="legend" style="text-align:center; margin-top:8px;">
     <span class="elevated-swatch"></span> Elevated (>3 dB above baseline) &nbsp;&nbsp;
-    <span class="marker-swatch"></span> At marker &nbsp;&nbsp;
+    <span class="marker-swatch"></span> Average at marker &nbsp;&nbsp;
+    <span style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px;background:#4361ee;opacity:0.25;"></span> Peak at marker &nbsp;&nbsp;
     <span class="baseline-swatch"></span> Session baseline
   </div>`;
 
