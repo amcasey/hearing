@@ -242,6 +242,7 @@ let warmupRemaining = 0;
 let results = {}; // band index -> { presentations, clicks } or { appearances, score }
 let currentToneBand = -1;
 let canRespond = false;
+let respondedToCurrentTone = false;
 let stopped = false;
 
 // Paired-specific
@@ -379,6 +380,7 @@ async function runRandom() {
   for (let i = 0; i < warmup.length && !stopped; i++) {
     document.getElementById('random-progress').textContent = `Warm-up ${i + 1} / ${WARMUP_COUNT}`;
     currentToneBand = warmup[i];
+    respondedToCurrentTone = false;
     canRespond = true;
     await playTone(bands[warmup[i]]);
     canRespond = true; // keep response window open during silence
@@ -395,6 +397,7 @@ async function runRandom() {
     const bandIdx = deck[i];
     document.getElementById('random-progress').textContent = `Tone ${i + 1} / ${TOTAL_RANDOM}`;
     currentToneBand = bandIdx;
+    respondedToCurrentTone = false;
     canRespond = true;
     results[bandIdx].presentations++;
     await playTone(bands[bandIdx]);
@@ -409,6 +412,8 @@ async function runRandom() {
 function markLoud() {
   if (!canRespond || state === 'idle' || state === 'results') return;
   if (state === 'warmup') return; // ignore warmup clicks for data
+  if (respondedToCurrentTone) return;
+  respondedToCurrentTone = true;
   if (currentToneBand >= 0) {
     results[currentToneBand].clicks++;
     // Visual feedback
