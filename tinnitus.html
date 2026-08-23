@@ -115,6 +115,28 @@
     margin-bottom: 1rem;
   }
   .hidden { display: none !important; }
+  .ear-toggles {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+  }
+  .ear-toggle {
+    padding: 0.5rem 1.2rem;
+    border: 2px solid #444;
+    border-radius: 6px;
+    background: #555;
+    color: #999;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .ear-toggle.active {
+    background: #e94560;
+    border-color: #e94560;
+    color: #fff;
+  }
 </style>
 </head>
 <body>
@@ -131,6 +153,10 @@
       <br><br>
       Use headphones for best results. Start at a low volume.
     </p>
+    <div class="ear-toggles">
+      <button class="ear-toggle" id="ear-left" onclick="toggleEar('left')">Left</button>
+      <button class="ear-toggle active" id="ear-right" onclick="toggleEar('right')">Right</button>
+    </div>
     <div class="control-group">
       <label for="volume-start">Volume</label>
       <input type="range" id="volume-start" min="0" max="1" step="0.01" value="0.15">
@@ -201,8 +227,13 @@ const BISECT_THRESHOLD = 50; // Hz — switch to slider when range is this narro
 let audioCtx = null;
 let oscillator = null;
 let gainNode = null;
-let panNode = null;
+let splitter = null;
+let mergerNode = null;
+let leftGain = null;
+let rightGain = null;
 let playing = false;
+let earLeft = false;
+let earRight = true;
 
 let lo = MIN_FREQ;
 let hi = MAX_FREQ;
@@ -239,8 +270,9 @@ function startTone(freq) {
 
   oscillator = audioCtx.createOscillator();
   gainNode = audioCtx.createGain();
-  panNode = audioCtx.createStereoPanner();
-  panNode.pan.setValueAtTime(1, audioCtx.currentTime); // right channel only
+  mergerNode = audioCtx.createChannelMerger(2);
+  leftGain = audioCtx.createGain();
+  rightGain = audioCtx.createGain();
 
   oscillator.type = 'sine';
   oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
@@ -249,9 +281,15 @@ function startTone(freq) {
   gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
   gainNode.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.05);
 
+  leftGain.gain.setValueAtTime(earLeft ? 1 : 0, audioCtx.currentTime);
+  rightGain.gain.setValueAtTime(earRight ? 1 : 0, audioCtx.currentTime);
+
   oscillator.connect(gainNode);
-  gainNode.connect(panNode);
-  panNode.connect(audioCtx.destination);
+  gainNode.connect(leftGain);
+  gainNode.connect(rightGain);
+  leftGain.connect(mergerNode, 0, 0);
+  rightGain.connect(mergerNode, 0, 1);
+  mergerNode.connect(audioCtx.destination);
   oscillator.start();
   playing = true;
   updatePlayButtons();
@@ -267,8 +305,24 @@ function stopTone() {
   }
   oscillator = null;
   gainNode = null;
+  leftGain = null;
+  rightGain = null;
+  mergerNode = null;
   playing = false;
   updatePlayButtons();
+}
+
+function toggleEar(ear) {
+  if (ear === 'left') earLeft = !earLeft;
+  if (ear === 'right') earRight = !earRight;
+  document.getElementById('ear-left').classList.toggle('active', earLeft);
+  document.getElementById('ear-right').classList.toggle('active', earRight);
+  if (leftGain && audioCtx) {
+    leftGain.gain.setValueAtTime(earLeft ? 1 : 0, audioCtx.currentTime);
+  }
+  if (rightGain && audioCtx) {
+    rightGain.gain.setValueAtTime(earRight ? 1 : 0, audioCtx.currentTime);
+  }
 }
 
 function setFrequency(freq) {
