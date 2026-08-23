@@ -154,7 +154,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
 <div id="screen-start" class="screen active">
   <h1>Hearing Aid Frequency Response Test</h1>
   <p class="instructions">
-    Identify frequencies receiving too much gain by testing your perception across 24 bands (100–8000 Hz).
+    Identify frequencies receiving too much gain by testing your perception across 24 bands (100–12,000 Hz).
     <br>Adjust your speaker volume externally between runs to test different levels.
   </p>
   <div class="mode-cards">
@@ -213,7 +213,7 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
 // --- Configuration ---
 const NUM_BANDS = 24;
 const FREQ_MIN = 100;
-const FREQ_MAX = 8000;
+const FREQ_MAX = 12000;
 const TONE_DURATION = 0.5;       // seconds
 const FADE_DURATION = 0.01;      // 10ms fade in/out
 const SILENCE_DURATION = 1.0;    // seconds between tones (random mode)
