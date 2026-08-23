@@ -334,7 +334,8 @@ function sampleSpectrum() {
     let sum = 0;
     let count = 0;
     for (let i = lowBin; i <= highBin; i++) {
-      sum += freqData[i];
+      const val = freqData[i];
+      sum += Math.max(val, -100);
       count++;
     }
     bandAmplitudes[b] = count > 0 ? sum / count : -100;
