@@ -573,8 +573,10 @@ function showReview() {
   let globalMin = Infinity, globalMax = -Infinity;
   for (const s of samples) {
     for (let b = 0; b < NUM_BANDS; b++) {
-      if (s.bands[b] < globalMin) globalMin = s.bands[b];
-      if (s.bands[b] > globalMax) globalMax = s.bands[b];
+      if (isFinite(s.bands[b])) {
+        if (s.bands[b] < globalMin) globalMin = s.bands[b];
+        if (s.bands[b] > globalMax) globalMax = s.bands[b];
+      }
     }
   }
   for (let b = 0; b < NUM_BANDS; b++) {
@@ -583,11 +585,13 @@ function showReview() {
   }
   for (const snap of markerSnapshots) {
     for (let b = 0; b < NUM_BANDS; b++) {
-      if (snap.maxBands[b] < globalMin) globalMin = snap.maxBands[b];
-      if (snap.maxBands[b] > globalMax) globalMax = snap.maxBands[b];
+      if (isFinite(snap.maxBands[b])) {
+        if (snap.maxBands[b] < globalMin) globalMin = snap.maxBands[b];
+        if (snap.maxBands[b] > globalMax) globalMax = snap.maxBands[b];
+      }
     }
   }
-  globalMin = Math.min(globalMin, -80);
+  globalMin = Math.min(Math.max(globalMin, -100), -80);
   const globalRange = Math.max(globalMax - globalMin, 1);
 
   // Render marker list
