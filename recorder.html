@@ -569,6 +569,27 @@ function showReview() {
     markerSnapshots.push({ time: mTime, avgBands, maxBands, avgSpl, elevatedBands, sampleCount: windowSamples.length });
   }
 
+  // Compute fixed scale for all per-sample and per-marker charts
+  let globalMin = Infinity, globalMax = -Infinity;
+  for (const s of samples) {
+    for (let b = 0; b < NUM_BANDS; b++) {
+      if (s.bands[b] < globalMin) globalMin = s.bands[b];
+      if (s.bands[b] > globalMax) globalMax = s.bands[b];
+    }
+  }
+  for (let b = 0; b < NUM_BANDS; b++) {
+    if (baseline[b] < globalMin) globalMin = baseline[b];
+    if (baseline[b] > globalMax) globalMax = baseline[b];
+  }
+  for (const snap of markerSnapshots) {
+    for (let b = 0; b < NUM_BANDS; b++) {
+      if (snap.maxBands[b] < globalMin) globalMin = snap.maxBands[b];
+      if (snap.maxBands[b] > globalMax) globalMax = snap.maxBands[b];
+    }
+  }
+  globalMin = Math.min(globalMin, -80);
+  const globalRange = Math.max(globalMax - globalMin, 1);
+
   // Render marker list
   const listEl = document.getElementById('marker-list');
   if (markerSnapshots.length === 0) {
@@ -587,7 +608,7 @@ function showReview() {
         <span class="bands">${topBands || 'No elevated bands'}</span>
         <span class="spl-info">SPL: ${splDiff >= 0 ? '+' : ''}${splDiff.toFixed(1)} dB</span>
       `;
-      item.addEventListener('click', () => showSnapshot(snap, baseline, idx));
+      item.addEventListener('click', () => showSnapshot(snap, baseline, idx, globalMin, globalRange));
       listEl.appendChild(item);
     });
   }
@@ -599,25 +620,12 @@ function showReview() {
   renderAggregateChart(markerSnapshots, baseline);
 
   // Timeline scrubber
-  initTimeline(baseline);
+  initTimeline(baseline, globalMin, globalRange);
 }
 
-function showSnapshot(snap, baseline, idx) {
+function showSnapshot(snap, baseline, idx, minDb, range) {
   const detailEl = document.getElementById('snapshot-detail');
   detailEl.style.display = 'block';
-
-  const maxDb = Math.max(
-    ...snap.avgBands,
-    ...snap.maxBands,
-    ...baseline
-  );
-  const minDb = Math.min(
-    ...snap.avgBands,
-    ...snap.maxBands,
-    ...baseline,
-    -80
-  );
-  const range = Math.max(maxDb - minDb, 1);
 
   let html = `<h2 style="text-align:center; margin-bottom: 12px;">Marker at ${formatTime(snap.time)} (${snap.sampleCount} samples in window)</h2>`;
   html += '<div class="snapshot-chart">';
@@ -751,27 +759,12 @@ function renderAggregateChart(markerSnapshots, baseline) {
 }
 
 // --- Timeline Scrubber ---
-function initTimeline(baseline) {
+function initTimeline(baseline, globalMin, globalRange) {
   if (samples.length === 0) return;
 
   const slider = document.getElementById('timeline-slider');
   slider.max = samples.length - 1;
   slider.value = 0;
-
-  // Compute fixed scale across all samples + baseline
-  let globalMin = Infinity, globalMax = -Infinity;
-  for (const s of samples) {
-    for (let b = 0; b < NUM_BANDS; b++) {
-      if (s.bands[b] < globalMin) globalMin = s.bands[b];
-      if (s.bands[b] > globalMax) globalMax = s.bands[b];
-    }
-  }
-  for (let b = 0; b < NUM_BANDS; b++) {
-    if (baseline[b] < globalMin) globalMin = baseline[b];
-    if (baseline[b] > globalMax) globalMax = baseline[b];
-  }
-  globalMin = Math.min(globalMin, -80);
-  const globalRange = Math.max(globalMax - globalMin, 1);
 
   // Draw overview canvas (SPL over time with marker lines)
   drawTimelineOverview();
