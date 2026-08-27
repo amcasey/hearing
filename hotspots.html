@@ -184,12 +184,6 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
   color: #888;
   margin-bottom: 8px;
 }
-.btn-hold {
-  transition: background 0.05s !important;
-}
-.btn-hold.held {
-  background: #ff4d5a !important;
-}
 </style>
 </head>
 <body>
@@ -208,8 +202,8 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
     </div>
 
     <div class="mode-card" data-mode="sweep" onclick="startMode('sweep')">
-      <h3>Frequency Sweep</h3>
-      <p>A continuous tone sweeps up and down. Hold the button while it sounds too loud. Fast overview.</p>
+      <h3>Stepped Sweep</h3>
+      <p>Discrete tones step through 60 frequencies, up then down. Click when one sounds too loud. ~2 minutes.</p>
     </div>
   </div>
 </div>
@@ -229,17 +223,17 @@ h2 { font-size: 1.2rem; margin-bottom: 8px; color: #aaa; }
 
 <!-- Sweep Mode Run Screen -->
 <div id="screen-sweep" class="screen">
-  <div class="warmup-notice" id="sweep-warmup">⚡ Warm-up sweep (not recorded)</div>
-  <div class="progress" id="sweep-progress">Sweep 1 / 6</div>
+  <div class="warmup-notice" id="sweep-warmup" style="display:none;">⚡ Warm-up (not recorded)</div>
+  <div class="progress" id="sweep-progress">Step 0 / 120</div>
   <div class="sweep-track">
     <div class="sweep-indicator" id="sweep-indicator"></div>
     <div class="sweep-mark-overlay" id="sweep-mark-overlay"></div>
   </div>
   <div class="sweep-direction" id="sweep-direction">▲ Sweeping up</div>
   <div style="margin: 20px 0;">
-    <button class="btn btn-loud btn-hold" id="btn-hold">HOLD: LOUD</button>
+    <button class="btn btn-loud" id="btn-sweep-loud" onmousedown="markSweepLoud()" ontouchstart="markSweepLoud()">LOUD</button>
   </div>
-  <p class="instructions"><strong>Hold</strong> the button or <strong>spacebar</strong> while the tone sounds unexpectedly loud. Release when it sounds normal.</p>
+  <p class="instructions">Press the button or <strong>spacebar</strong> when a tone sounds unexpectedly loud.</p>
   <span class="stop-link" onclick="stopEarly()">Stop early &amp; see results</span>
 </div>
 
@@ -267,9 +261,9 @@ const FADE_DURATION = 0.01;      // 10ms fade in/out
 const SILENCE_DURATION = 1.0;    // seconds between tones (random mode)
 const PRESENTATIONS_PER_BAND = 5;
 const WARMUP_COUNT = 10;
-const SWEEP_DURATION = 12;       // seconds per sweep
-const SWEEP_ROUND_TRIPS = 3;    // up+down = 1 round trip
-const SWEEP_SAMPLE_INTERVAL = 50; // ms between samples
+const SWEEP_STEPS = 60;          // number of discrete frequencies per direction
+const SWEEP_TONE_DURATION = 0.4; // seconds each tone plays
+const SWEEP_SILENCE = 600;       // ms silence between tones
 
 // --- Derived ---
 const TOTAL_RANDOM = PRESENTATIONS_PER_BAND * NUM_BANDS;
@@ -297,9 +291,7 @@ let stopped = false;
 
 
 // Sweep-specific
-let sweepHolding = false;
-let sweepOsc = null;
-let sweepGain = null;
+let sweepRespondedToStep = false;
 
 // --- Audio ---
 function ensureAudioCtx() {
@@ -464,8 +456,14 @@ function markLoud() {
 
 
 // --- Sweep Mode ---
+function getSweepStepFreq(step) {
+  // 60 log-spaced frequencies from FREQ_MIN to FREQ_MAX
+  const logMin = Math.log(FREQ_MIN);
+  const logMax = Math.log(FREQ_MAX);
+  return Math.exp(logMin + (step / (SWEEP_STEPS - 1)) * (logMax - logMin));
+}
+
 function freqToBand(freq) {
-  // Find nearest band index for a frequency (log scale)
   const logMin = Math.log(FREQ_MIN);
   const logMax = Math.log(FREQ_MAX);
   const logFreq = Math.log(Math.max(FREQ_MIN, Math.min(FREQ_MAX, freq)));
@@ -479,160 +477,106 @@ function freqToPosition(freq) {
   return (Math.log(freq) - logMin) / (logMax - logMin);
 }
 
-function getSweepFreq(t, goingUp) {
-  // t is 0..1 progress through this sweep
-  const logMin = Math.log(FREQ_MIN);
-  const logMax = Math.log(FREQ_MAX);
-  const frac = goingUp ? t : (1 - t);
-  return Math.exp(logMin + frac * (logMax - logMin));
+function playToneForSweep(freq) {
+  return new Promise(resolve => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + FADE_DURATION);
+    gain.gain.setValueAtTime(0.3, now + SWEEP_TONE_DURATION - FADE_DURATION);
+    gain.gain.linearRampToValueAtTime(0, now + SWEEP_TONE_DURATION);
+
+    osc.start(now);
+    osc.stop(now + SWEEP_TONE_DURATION + 0.01);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+      resolve();
+    };
+  });
 }
 
 async function runSweep() {
   showScreen('screen-sweep');
   stopped = false;
-  sweepHolding = false;
 
-  // Init results: samples and marked samples per band
+  // Init results: presentations and clicks per band (same as random)
   results = {};
   for (let b = 0; b < NUM_BANDS; b++) {
     results[b] = { samples: 0, marked: 0 };
   }
 
-  const totalSweeps = SWEEP_ROUND_TRIPS * 2; // up + down each
+  const totalSteps = SWEEP_STEPS * 2; // up + down
   const progressEl = document.getElementById('sweep-progress');
-  const freqEl = document.getElementById('sweep-freq');
   const indicatorEl = document.getElementById('sweep-indicator');
   const directionEl = document.getElementById('sweep-direction');
   const warmupEl = document.getElementById('sweep-warmup');
   const overlayEl = document.getElementById('sweep-mark-overlay');
-  const holdBtn = document.getElementById('btn-hold');
 
-  // Start continuous oscillator
   ensureAudioCtx();
-  sweepOsc = audioCtx.createOscillator();
-  sweepGain = audioCtx.createGain();
-  sweepOsc.type = 'sine';
-  sweepOsc.frequency.value = FREQ_MIN;
-  sweepGain.gain.value = 0;
-  sweepOsc.connect(sweepGain);
-  sweepGain.connect(audioCtx.destination);
-  sweepOsc.start();
+  overlayEl.innerHTML = '';
 
-  for (let s = 0; s < totalSweeps && !stopped; s++) {
-    const goingUp = (s % 2 === 0);
-    const sweepNum = s + 1;
-    const isWarmup = (s === 0);
+  // Build step sequence: 0..59 (up) then 59..0 (down)
+  const steps = [];
+  for (let i = 0; i < SWEEP_STEPS; i++) steps.push({ step: i, goingUp: true });
+  for (let i = SWEEP_STEPS - 1; i >= 0; i--) steps.push({ step: i, goingUp: false });
 
-    if (isWarmup) {
-      state = 'warmup';
-      warmupEl.style.display = 'block';
-    } else if (s === 1) {
-      state = 'running';
-      warmupEl.style.display = 'none';
-    }
+  state = 'running';
+  warmupEl.style.display = 'none';
 
-    progressEl.textContent = isWarmup
-      ? 'Warm-up sweep'
-      : `Sweep ${s} / ${totalSweeps - 1}`;
+  for (let si = 0; si < steps.length && !stopped; si++) {
+    const { step, goingUp } = steps[si];
+    const freq = getSweepStepFreq(step);
+    const bandIdx = freqToBand(freq);
+    const pos = freqToPosition(freq);
+
+    // Update UI
+    progressEl.textContent = `Step ${si + 1} / ${totalSteps}`;
     directionEl.textContent = goingUp ? '▲ Sweeping up' : '▼ Sweeping down';
-    overlayEl.innerHTML = '';
+    indicatorEl.style.left = (pos * 100) + '%';
 
-    // Fade in at start of sweep
-    const now1 = audioCtx.currentTime;
-    sweepGain.gain.setValueAtTime(0, now1);
-    sweepGain.gain.linearRampToValueAtTime(0.3, now1 + FADE_DURATION);
+    // Play tone and allow response
+    sweepRespondedToStep = false;
+    canRespond = true;
+    results[bandIdx].samples++;
 
-    const sweepStartTime = performance.now();
-    const sweepMs = SWEEP_DURATION * 1000;
-    let markStart = null; // position where current mark started
+    await playToneForSweep(freq);
 
-    while (!stopped) {
-      const elapsed = performance.now() - sweepStartTime;
-      if (elapsed >= sweepMs) break;
+    // Keep response window open during silence
+    await wait(SWEEP_SILENCE);
+    canRespond = false;
 
-      const t = elapsed / sweepMs;
-      const freq = getSweepFreq(t, goingUp);
-      const bandIdx = freqToBand(freq);
-      const pos = freqToPosition(freq);
-
-      // Update oscillator frequency
-      if (sweepOsc) sweepOsc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
-      // Update UI
-      indicatorEl.style.left = (pos * 100) + '%';
-
-      // Record sample
-      if (!isWarmup) {
-        results[bandIdx].samples++;
-        if (sweepHolding) {
-          results[bandIdx].marked++;
-        }
-      }
-
-      // Track mark regions on the visual bar
-      if (sweepHolding && markStart === null) {
-        markStart = pos;
-      } else if (!sweepHolding && markStart !== null) {
-        addMarkRegion(overlayEl, markStart, pos, goingUp);
-        markStart = null;
-      }
-
-      // Update hold button visual
-      holdBtn.classList.toggle('held', sweepHolding);
-
-      await wait(SWEEP_SAMPLE_INTERVAL);
+    // If flagged, record and mark on overlay
+    if (sweepRespondedToStep) {
+      results[bandIdx].marked++;
+      const mark = document.createElement('div');
+      mark.className = 'sweep-mark';
+      const stepWidth = 1 / SWEEP_STEPS;
+      mark.style.left = (pos - stepWidth / 2) * 100 + '%';
+      mark.style.width = stepWidth * 100 + '%';
+      overlayEl.appendChild(mark);
     }
-
-    // Close any open mark region
-    if (markStart !== null) {
-      const finalPos = goingUp ? 1 : 0;
-      addMarkRegion(overlayEl, markStart, finalPos, goingUp);
-    }
-
-    // Fade out at end of sweep
-    if (sweepGain) {
-      const now2 = audioCtx.currentTime;
-      sweepGain.gain.setValueAtTime(0.3, now2);
-      sweepGain.gain.linearRampToValueAtTime(0, now2 + FADE_DURATION);
-    }
-
-    // Brief pause between sweeps
-    if (!stopped) await wait(500);
   }
 
-  // Stop oscillator
-  stopSweepOsc();
+  canRespond = false;
   if (!stopped) showResults();
 }
 
-function addMarkRegion(overlay, startPos, endPos, goingUp) {
-  const left = Math.min(startPos, endPos);
-  const right = Math.max(startPos, endPos);
-  const mark = document.createElement('div');
-  mark.className = 'sweep-mark';
-  mark.style.left = (left * 100) + '%';
-  mark.style.width = ((right - left) * 100) + '%';
-  overlay.appendChild(mark);
-}
-
-function stopSweepOsc() {
-  if (sweepOsc) {
-    try { sweepOsc.stop(); } catch (e) {}
-    sweepOsc.disconnect();
-    sweepOsc = null;
-  }
-  if (sweepGain) {
-    sweepGain.disconnect();
-    sweepGain = null;
-  }
-}
-
-function sweepHoldStart() {
-  sweepHolding = true;
-}
-
-function sweepHoldEnd() {
-  sweepHolding = false;
+function markSweepLoud() {
+  if (!canRespond || state === 'idle' || state === 'results') return;
+  if (sweepRespondedToStep) return;
+  sweepRespondedToStep = true;
+  // Visual feedback
+  const btn = document.getElementById('btn-sweep-loud');
+  btn.style.background = '#ff4d5a';
+  setTimeout(() => { btn.style.background = ''; }, 150);
 }
 
 // --- Control ---
@@ -648,8 +592,6 @@ function startRun() {
 function stopEarly() {
   stopped = true;
   canRespond = false;
-  sweepHolding = false;
-  stopSweepOsc();
   showResults();
 }
 
@@ -717,27 +659,11 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     markLoud();
   }
-  if (e.code === 'Space' && selectedMode === 'sweep' && (state === 'running' || state === 'warmup')) {
+  if (e.code === 'Space' && selectedMode === 'sweep' && state === 'running') {
     e.preventDefault();
-    sweepHoldStart();
-  }
-
-});
-document.addEventListener('keyup', (e) => {
-  if (e.code === 'Space' && selectedMode === 'sweep') {
-    e.preventDefault();
-    sweepHoldEnd();
+    markSweepLoud();
   }
 });
-
-// Sweep hold button mouse/touch events
-const holdBtn = document.getElementById('btn-hold');
-holdBtn.addEventListener('mousedown', (e) => { e.preventDefault(); sweepHoldStart(); });
-holdBtn.addEventListener('mouseup', (e) => { sweepHoldEnd(); });
-holdBtn.addEventListener('mouseleave', (e) => { sweepHoldEnd(); });
-holdBtn.addEventListener('touchstart', (e) => { e.preventDefault(); sweepHoldStart(); });
-holdBtn.addEventListener('touchend', (e) => { sweepHoldEnd(); });
-holdBtn.addEventListener('touchcancel', (e) => { sweepHoldEnd(); });
 </script>
 </body>
 </html>
